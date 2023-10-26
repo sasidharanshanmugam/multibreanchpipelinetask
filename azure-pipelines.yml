@@ -1,0 +1,66 @@
+trigger:
+- none
+
+stages:
+- stage: Build
+  displayName: Build stage
+  jobs:
+  - job: Build
+    displayName: 'Build'
+    pool:
+      name: Linux
+      demands:
+       - agent.name -equals Linux
+    steps:
+    - task: NodeTool@0
+      inputs:
+       versionSpec: '10.x'
+      displayName: 'Install Node.js'
+    - script: |
+        npm install
+        npm run build
+      displayName: 'npm install and build 
+  
+    - task: CopyFiles@2
+      inputs:
+        SourceFolder: '$(Build.SourcesDirectory)'
+        Contents: '**'
+        TargetFolder: '$(Build.ArtifactStagingDirectory)'
+      displayName: 'Copy npm package'
+
+    - task: ArchiveFiles@2
+      inputs:
+        rootFolderOrFile: '$(Build.ArtifactStagingDirectory)'
+        includeRootFolder: false
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip'
+        replaceExistingArchive: true
+    - upload: $(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip
+      artifact: drop
+
+- stage: Deploy
+  displayName: Deploy stage
+  condition: succeeded()
+  jobs:
+  - deployment: Deploy
+    displayName: Deploy
+    environment: main
+    pool:
+      name: Linux
+      demands:
+       - agent.name -equals Linux
+    strategy:
+      runOnce:
+        deploy:
+          steps:           
+          - task: AzureRmWebAppDeployment@4
+            inputs:
+             ConnectionType: 'AzureRM'
+             azureSubscription: 'sp'
+             appType: 'webAppLinux'
+             WebAppName: 'POCAppservice'
+             packageForLinux: '$(Build.ArtifactStagingDirectory)/npm/'
+          - task: WhiteSource@21
+            inputs:
+             cwd: '$(System.DefaultWorkingDirectory)'
+             projectName: 'poc'
